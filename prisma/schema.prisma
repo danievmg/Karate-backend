@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Atleta {
+  id              Int               @id @default(autoincrement())
+  nome            String
+  data_nascimento DateTime?
+  sexo            String?
+  peso            Float?
+  faixa           String?
+  created_at      DateTime          @default(now())
+  pontuacoes_kata   PontuacaoKata[]
+  pontuacoes_kumite PontuacaoKumite[]
+
+  @@map("atletas")
+}
+
+model Evento {
+  id              Int               @id @default(autoincrement())
+  nome            String
+  tipo            String?
+  data            DateTime
+  local           String?
+  observacoes     String?
+  created_at      DateTime          @default(now())
+  pontuacoes_kata   PontuacaoKata[]
+  pontuacoes_kumite PontuacaoKumite[]
+
+  @@map("eventos")
+}
+
+model PontuacaoKata {
+  id            Int      @id @default(autoincrement())
+  atleta_id     Int
+  evento_id     Int?     // <--- O "?" permite que o campo seja nulo
+  data          DateTime
+  nome_kata     String
+  nota_tecnica  Float    @default(0)
+  nota_atletica Float    @default(0)
+  nota_final    Float    @default(0)
+  resultado     String?
+  observacoes   String?
+  created_at    DateTime @default(now())
+
+  atleta Atleta  @relation(fields: [atleta_id], references: [id], onDelete: Cascade)
+  evento Evento? @relation(fields: [evento_id], references: [id], onDelete: Cascade) // <--- "?" aqui também
+
+  @@map("pontuacoes_kata")
+}
+
+model PontuacaoKumite {
+  id              Int      @id @default(autoincrement())
+  atleta_id       Int
+  evento_id       Int?     // <--- O "?" permite que o campo seja nulo
+  data            DateTime
+  adversario_nome String?
+  ippon           Int      @default(0)
+  waza_ari        Int      @default(0)
+  yuko            Int      @default(0)
+  pontos_sofridos Int      @default(0)
+  pontos_totais   Int      @default(0)
+  resultado       String?
+  observacoes     String?
+  created_at      DateTime @default(now())
+
+  atleta Atleta  @relation(fields: [atleta_id], references: [id], onDelete: Cascade)
+  evento Evento? @relation(fields: [evento_id], references: [id], onDelete: Cascade) // <--- "?" aqui também
+
+  @@map("pontuacoes_kumite")
+}
+
+// Adicione isso no final do seu schema.prisma
+
+model Usuario {
+  id         Int      @id @default(autoincrement())
+  nome       String
+  email      String   @unique
+  senha      String   // Aqui vai a senha criptografada
+  role       String   @default("mesario") // admin ou mesario
+  created_at DateTime @default(now())
+
+  @@map("usuarios")
+}
