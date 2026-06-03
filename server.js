@@ -7,7 +7,31 @@ const jwt = require('jsonwebtoken');
 const app = express();
 const prisma = new PrismaClient();
 
-app.use(cors());
+// ==========================================
+// --- CONFIGURAÇÃO DE CORS CONFIGURADA ---
+// ==========================================
+const allowedOrigins = [
+  'https://karate-frontend-psi.vercel.app', // Seu frontend na Vercel
+  'http://localhost:5173',                  // Porta padrão do Vite (Local)
+  'http://localhost:3000'                   // Outras portas locais comuns
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Permite requisições sem origem (como ferramentas de teste tipo Insomnia/Postman ou Mobile)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Bloqueado pelo CORS: Origem não permitida pela política de segurança.'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+
 app.use(express.json());
 
 // ==========================================
@@ -46,7 +70,6 @@ const verificarPermissao = (rolesPermitidos) => {
     };
 };
 
-// 1. Rota oculta para criar o seu primeiro utilizador Admin (Pública)
 // 1. Rota para criar o primeiro Admin (AGORA PROTEGIDA)
 app.post('/api/usuarios/setup', async (req, res) => {
     try {
@@ -308,7 +331,7 @@ app.put('/api/pontuacoes/kata/:id', verificarPermissao(['admin', 'sensei', 'mesa
 
 app.delete('/api/pontuacoes/kata/:id', verificarPermissao(['admin', 'sensei']), async (req, res) => {
     try {
-        await prisma.pontuacaoKata.delete({ where: { id: parseInt(req.params.id) } });
+        await prisma.prisma.usuario.delete({ where: { id: parseInt(req.params.id) } });
         res.json({ message: "Kata apagado" });
     } catch (error) {
         res.status(500).json({ error: "Erro ao apagar Kata" });
@@ -393,9 +416,10 @@ app.delete('/api/pontuacoes/kumite/:id', verificarPermissao(['admin', 'sensei'])
     }
 });
 
-const PORT = 3000;
+// Usando process.env.PORT exigido para produção na Vercel / Heroku, mantendo fallback local na 3000
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor a correr na porta ${PORT} com CRUD e RBAC COMPLETO!`);
+    console.log(`🚀 Servidor rodando com sucesso!`);
 });
 
 // ==========================================
@@ -425,7 +449,7 @@ app.put('/api/usuarios/:id/role', verificarPermissao(['admin']), async (req, res
             where: { id: parseInt(id) },
             data: { role }
         });
-        res.json({ message: "Cargo atualizado com sucesso!", role: atualizado.role });
+        res.json({ message: "Cargo atualizado com sucesso!", role: updated.role });
     } catch (error) {
         res.status(500).json({ error: "Erro ao atualizar cargo." });
     }
