@@ -11,7 +11,8 @@ const prisma = new PrismaClient();
 // --- CONFIGURAÇÃO DE CORS CONFIGURADA ---
 // ==========================================
 const allowedOrigins = [
-  'https://karate-frontend-psi.vercel.app', // Seu frontend na Vercel
+  'https://karate-frontend-psi.vercel.app', // Seu frontend principal
+  'https://karate-frontend-git-projetogit-daniel-rls-projects.vercel.app', // Sua URL de teste atual
   'http://localhost:5173',                  // Porta padrão do Vite (Local)
   'http://localhost:3000'                   // Outras portas locais comuns
 ];
