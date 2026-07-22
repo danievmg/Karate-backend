@@ -331,7 +331,8 @@ app.put('/api/pontuacoes/kata/:id', verificarPermissao(['admin', 'sensei', 'mesa
 
 app.delete('/api/pontuacoes/kata/:id', verificarPermissao(['admin', 'sensei']), async (req, res) => {
     try {
-        await prisma.prisma.usuario.delete({ where: { id: parseInt(req.params.id) } });
+        // CORREÇÃO APLICADA: Corrigido o modelo alvo de exclusão
+        await prisma.pontuacaoKata.delete({ where: { id: parseInt(req.params.id) } });
         res.json({ message: "Kata apagado" });
     } catch (error) {
         res.status(500).json({ error: "Erro ao apagar Kata" });
@@ -416,12 +417,6 @@ app.delete('/api/pontuacoes/kumite/:id', verificarPermissao(['admin', 'sensei'])
     }
 });
 
-// Usando process.env.PORT exigido para produção na Vercel / Heroku, mantendo fallback local na 3000
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`🚀 Servidor rodando com sucesso!`);
-});
-
 // ==========================================
 // --- GESTÃO DE UTILIZADORES (ADMIN) ---
 // ==========================================
@@ -449,7 +444,8 @@ app.put('/api/usuarios/:id/role', verificarPermissao(['admin']), async (req, res
             where: { id: parseInt(id) },
             data: { role }
         });
-        res.json({ message: "Cargo atualizado com sucesso!", role: updated.role });
+        // CORREÇÃO APLICADA: A variável agora é "atualizado" em vez de "updated"
+        res.json({ message: "Cargo atualizado com sucesso!", role: atualizado.role });
     } catch (error) {
         res.status(500).json({ error: "Erro ao atualizar cargo." });
     }
@@ -464,3 +460,16 @@ app.delete('/api/usuarios/:id', verificarPermissao(['admin']), async (req, res) 
         res.status(500).json({ error: "Erro ao remover utilizador." });
     }
 });
+
+// ==========================================
+// --- INICIALIZAÇÃO DO SERVIDOR ---
+// ==========================================
+
+// CORREÇÃO APLICADA: Bloco movido para o final do arquivo após o registro de todas as rotas
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`🚀 Servidor rodando com sucesso na porta ${PORT}!`);
+});
+
+// CORREÇÃO APLICADA: Adicionado para garantir o funcionamento em ambientes Serverless como a Vercel
+module.exports = app;
