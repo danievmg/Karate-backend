@@ -11,17 +11,15 @@ const prisma = new PrismaClient();
 // --- CONFIGURAÇÃO DE CORS CONFIGURADA ---
 // ==========================================
 const allowedOrigins = [
-  'https://karate-frontend-psi.vercel.app', // Seu frontend principal
-  'https://karate-frontend-git-projetogit-daniel-rls-projects.vercel.app', // Sua URL de teste atual
-  'http://localhost:5173',                  // Porta padrão do Vite (Local)
-  'http://localhost:3000'                   // Outras portas locais comuns
+  'https://karate-frontend-psi.vercel.app', 
+  'https://karate-frontend-git-projetogit-daniel-rls-projects.vercel.app', 
+  'http://localhost:5173',                  
+  'http://localhost:3000'                   
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Permite requisições sem origem (como ferramentas de teste tipo Insomnia/Postman ou Mobile)
     if (!origin) return callback(null, true);
-    
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
@@ -35,64 +33,49 @@ app.use(cors({
 
 app.use(express.json());
 
-// ==========================================
-// --- AUTENTICAÇÃO E UTILIZADORES ---
-// ==========================================
-
-// Lê a chave secreta do ficheiro .env (Muito importante para a Vercel)
 const JWT_SECRET = process.env.JWT_SECRET || "223155ç"; 
 
-// --- MIDDLEWARE DE AUTORIZAÇÃO (O "Porteiro") ---
+// --- MIDDLEWARE DE AUTORIZAÇÃO ---
 const verificarPermissao = (rolesPermitidos) => {
     return (req, res, next) => {
-        // 1. Verifica se o token foi enviado
         const authHeader = req.headers.authorization;
-        if (!authHeader) {
-            return res.status(401).json({ error: "Token não fornecido. Acesso negado." });
-        }
+        if (!authHeader) return res.status(401).json({ error: "Token não fornecido. Acesso negado." });
 
-        // O token vem no formato "Bearer TOKEN_AQUI", então separamos
         const token = authHeader.split(' ')[1];
 
         try {
-            // 2. Tenta decifrar o token
             const dados = jwt.verify(token, JWT_SECRET);
-            req.usuarioLogado = dados; // Guarda os dados do utilizador no pedido
+            req.usuarioLogado = dados; 
 
-            // 3. Verifica se o cargo do utilizador está na lista de permitidos
             if (rolesPermitidos && !rolesPermitidos.includes(dados.role)) {
                 return res.status(403).json({ error: "Acesso negado: O seu cargo não tem permissão para esta ação." });
             }
-
-            next(); // Permissão concedida, pode prosseguir
+            next(); 
         } catch (err) {
             return res.status(401).json({ error: "Token inválido ou expirado. Faça login novamente." });
         }
     };
 };
 
-// 1. Rota para criar o primeiro Admin (AGORA PROTEGIDA)
+// ==========================================
+// --- AUTENTICAÇÃO E UTILIZADORES ---
+// ==========================================
+
+// Setup do primeiro admin
 app.post('/api/usuarios/setup', async (req, res) => {
     try {
-        // --- A TRAVA DE SEGURANÇA ---
-        // Verifica se já existe ALGUÉM com o cargo de 'admin' no banco inteiro
         const adminJaExiste = await prisma.usuario.findFirst({ where: { role: 'admin' } });
-        
-        if (adminJaExiste) {
-            return res.status(403).json({ error: "Acesso negado! O sistema já possui um Administrador." });
-        }
-        // ----------------------------
+        if (adminJaExiste) return res.status(403).json({ error: "O sistema já possui um Administrador." });
 
         const { nome, email, senha, role } = req.body;
-        
         const existe = await prisma.usuario.findUnique({ where: { email } });
         if (existe) return res.status(400).json({ error: "Email já cadastrado." });
 
         const salt = await bcrypt.genSalt(10);
         const senhaHash = await bcrypt.hash(senha, salt);
 
-        const novoUser = await prisma.usuario.create({
-            data: { nome, email, senha: senhaHash, role: role || 'admin' }
+        await prisma.usuario.create({
+            data: { nome, email, senha: senhaHash, role: role || 'admin', email_verificado: true }
         });
         res.json({ message: "Usuário Admin criado com sucesso!" });
     } catch (error) {
@@ -100,54 +83,175 @@ app.post('/api/usuarios/setup', async (req, res) => {
     }
 });
 
-// 2. Rota de Login (Pública)
+// Login
 app.post('/api/login', async (req, res) => {
     try {
         const { email, senha } = req.body;
-
         const usuario = await prisma.usuario.findUnique({ where: { email } });
+        
         if (!usuario) return res.status(404).json({ error: "Utilizador não encontrado." });
-
+        
         const senhaValida = await bcrypt.compare(senha, usuario.senha);
         if (!senhaValida) return res.status(401).json({ error: "Palavra-passe incorreta." });
 
-        // Adicionamos o 'role' no token para sabermos quem é nas outras rotas
         const token = jwt.sign(
             { id: usuario.id, role: usuario.role, nome: usuario.nome },
             JWT_SECRET,
             { expiresIn: '8h' }
         );
 
-        res.json({ 
-            token, 
-            usuario: { id: usuario.id, nome: usuario.nome, role: usuario.role } 
-        });
-
+        res.json({ token, usuario: { id: usuario.id, nome: usuario.nome, role: usuario.role } });
     } catch (error) {
-        console.log("ERRO NO SERVIDOR:", error);
         res.status(500).json({ error: "Erro interno no servidor." });
     }
 });
 
-// 3. Rota Pública de Auto-Cadastro (Pais e Alunos)
+// Cadastro
 app.post('/api/cadastro', async (req, res) => {
     try {
         const { nome, email, senha } = req.body;
-        
         const existe = await prisma.usuario.findUnique({ where: { email } });
         if (existe) return res.status(400).json({ error: "Este email já está em uso." });
 
         const salt = await bcrypt.genSalt(10);
         const senhaHash = await bcrypt.hash(senha, salt);
 
-        // Cria o utilizador com o nível 'aluno' por defeito
         await prisma.usuario.create({
             data: { nome, email, senha: senhaHash, role: 'aluno' }
         });
         
-        res.json({ message: "Conta criada com sucesso! Faça login para continuar." });
+        res.json({ message: "Conta criada com sucesso! Verifique seu e-mail para validar a conta." });
     } catch (error) {
         res.status(500).json({ error: "Erro interno ao criar a conta." });
+    }
+});
+
+// ==========================================
+// --- NOVAS ROTAS: GESTÃO DE DOJOS ---
+// ==========================================
+
+// 1. Criar um Dojo (O criador vira ADMIN automaticamente)
+app.post('/api/dojos', verificarPermissao(['admin', 'sensei', 'aluno']), async (req, res) => {
+    try {
+        const { nome, logo_url } = req.body;
+        const usuarioId = req.usuarioLogado.id;
+
+        // Inicia uma transação: Cria o Dojo e já insere o criador como ADMIN e ACEITO
+        const novoDojo = await prisma.$transaction(async (tx) => {
+            const dojo = await tx.dojo.create({
+                data: { nome, logo_url, criador_id: usuarioId }
+            });
+
+            await tx.membroDojo.create({
+                data: {
+                    dojo_id: dojo.id,
+                    usuario_id: usuarioId,
+                    papel: 'ADMIN',
+                    status: 'ACEITO'
+                }
+            });
+
+            return dojo;
+        });
+
+        res.json({ message: "Dojo criado com sucesso!", dojo: novoDojo });
+    } catch (error) {
+        res.status(500).json({ error: "Erro ao criar Dojo", detalhe: error.message });
+    }
+});
+
+// 2. Aluno solicita entrada em um Dojo
+app.post('/api/dojos/:id/solicitar', verificarPermissao(['aluno', 'mesario', 'sensei']), async (req, res) => {
+    try {
+        const dojoId = parseInt(req.params.id);
+        const usuarioId = req.usuarioLogado.id;
+
+        const solicitacao = await prisma.membroDojo.create({
+            data: {
+                dojo_id: dojoId,
+                usuario_id: usuarioId,
+                papel: 'ALUNO',
+                status: 'PENDENTE'
+            }
+        });
+
+        res.json({ message: "Solicitação enviada! Aguarde a aprovação.", solicitacao });
+    } catch (error) {
+        if (error.code === 'P2002') {
+            return res.status(400).json({ error: "Você já enviou uma solicitação para este Dojo." });
+        }
+        res.status(500).json({ error: "Erro ao solicitar entrada." });
+    }
+});
+
+// 3. Admin do Dojo Aceita ou Recusa a solicitação
+app.put('/api/dojos/solicitacoes/:id_solicitacao', verificarPermissao(['admin', 'sensei']), async (req, res) => {
+    try {
+        const idSolicitacao = parseInt(req.params.id_solicitacao);
+        const { status } = req.body; // Esperado: 'ACEITO' ou 'RECUSADO'
+        const usuarioLogadoId = req.usuarioLogado.id;
+
+        if (!['ACEITO', 'RECUSADO'].includes(status)) {
+            return res.status(400).json({ error: "Status inválido." });
+        }
+
+        const solicitacaoExistente = await prisma.membroDojo.findUnique({
+            where: { id: idSolicitacao }
+        });
+
+        if (!solicitacaoExistente) {
+            return res.status(404).json({ error: "Solicitação não encontrada." });
+        }
+
+        // Verifica se quem está aceitando é ADMIN daquele Dojo específico
+        const isAdmin = await prisma.membroDojo.findFirst({
+            where: {
+                dojo_id: solicitacaoExistente.dojo_id,
+                usuario_id: usuarioLogadoId,
+                papel: 'ADMIN'
+            }
+        });
+
+        // Se não for admin daquele dojo específico, e não for o super admin geral
+        if (!isAdmin && req.usuarioLogado.role !== 'admin') {
+            return res.status(403).json({ error: "Você não tem permissão para gerir este Dojo." });
+        }
+
+        const atualizada = await prisma.membroDojo.update({
+            where: { id: idSolicitacao },
+            data: { status }
+        });
+
+        res.json({ message: `Solicitação marcada como ${status}`, solicitacao: atualizada });
+    } catch (error) {
+        res.status(500).json({ error: "Erro ao processar solicitação." });
+    }
+});
+
+// ==========================================
+// --- NOVAS ROTAS: RESPONSÁVEIS ---
+// ==========================================
+
+// Vincular um pai/responsável a um atleta
+app.post('/api/vinculos', verificarPermissao(['admin', 'sensei', 'aluno']), async (req, res) => {
+    try {
+        const { atleta_id, responsavel_email, parentesco } = req.body;
+
+        const responsavel = await prisma.usuario.findUnique({ where: { email: responsavel_email } });
+        if (!responsavel) return res.status(404).json({ error: "Responsável não possui cadastro no sistema." });
+
+        const vinculo = await prisma.vinculoResponsavel.create({
+            data: {
+                atleta_id: parseInt(atleta_id),
+                responsavel_id: responsavel.id,
+                parentesco: parentesco || "Responsável"
+            }
+        });
+
+        res.json({ message: "Vínculo criado com sucesso!", vinculo });
+    } catch (error) {
+        if (error.code === 'P2002') return res.status(400).json({ error: "Este responsável já está vinculado a este atleta." });
+        res.status(500).json({ error: "Erro ao criar vínculo." });
     }
 });
 
@@ -155,7 +259,6 @@ app.post('/api/cadastro', async (req, res) => {
 // --- ATLETAS ---
 // ==========================================
 
-// Todos os utilizadores logados podem ver os atletas
 app.get('/api/atletas', verificarPermissao(['admin', 'sensei', 'mesario', 'aluno']), async (req, res) => {
     try {
         const atletas = await prisma.atleta.findMany({ orderBy: { nome: 'asc' } });
@@ -165,7 +268,6 @@ app.get('/api/atletas', verificarPermissao(['admin', 'sensei', 'mesario', 'aluno
     }
 });
 
-// Apenas Admin e Sensei podem adicionar atletas
 app.post('/api/atletas', verificarPermissao(['admin', 'sensei']), async (req, res) => {
     try {
         const { nome, faixa, peso, sexo, data_nascimento } = req.body;
@@ -178,11 +280,10 @@ app.post('/api/atletas', verificarPermissao(['admin', 'sensei']), async (req, re
         });
         res.json(novoAtleta);
     } catch (error) {
-        res.status(500).json({ error: "Erro ao criar atleta", detalhe: error.message });
+        res.status(500).json({ error: "Erro ao criar atleta" });
     }
 });
 
-// Apenas Admin e Sensei podem editar
 app.put('/api/atletas/:id', verificarPermissao(['admin', 'sensei']), async (req, res) => {
     try {
         const { nome, faixa, peso, sexo, data_nascimento } = req.body;
@@ -196,17 +297,16 @@ app.put('/api/atletas/:id', verificarPermissao(['admin', 'sensei']), async (req,
         });
         res.json(atualizado);
     } catch (error) {
-        res.status(500).json({ error: "Erro ao atualizar atleta", detalhe: error.message });
+        res.status(500).json({ error: "Erro ao atualizar atleta" });
     }
 });
 
-// Apenas Admin pode apagar registos
 app.delete('/api/atletas/:id', verificarPermissao(['admin']), async (req, res) => {
     try {
         await prisma.atleta.delete({ where: { id: parseInt(req.params.id) } });
         res.json({ message: "Atleta apagado com sucesso" });
     } catch (error) {
-        res.status(500).json({ error: "Erro ao apagar atleta", detalhe: error.message });
+        res.status(500).json({ error: "Erro ao apagar atleta" });
     }
 });
 
@@ -214,7 +314,6 @@ app.delete('/api/atletas/:id', verificarPermissao(['admin']), async (req, res) =
 // --- EVENTOS ---
 // ==========================================
 
-// Todos podem ver os eventos
 app.get('/api/eventos', verificarPermissao(['admin', 'sensei', 'mesario', 'aluno']), async (req, res) => {
     try {
         const eventos = await prisma.evento.findMany({ orderBy: { data: 'desc' } });
@@ -224,7 +323,6 @@ app.get('/api/eventos', verificarPermissao(['admin', 'sensei', 'mesario', 'aluno
     }
 });
 
-// Admin e Sensei podem gerir eventos
 app.post('/api/eventos', verificarPermissao(['admin', 'sensei']), async (req, res) => {
     try {
         const { nome, tipo, data, local, observacoes } = req.body;
@@ -263,7 +361,6 @@ app.delete('/api/eventos/:id', verificarPermissao(['admin']), async (req, res) =
 // --- PONTUAÇÕES (KATA) ---
 // ==========================================
 
-// Todos podem ver
 app.get('/api/pontuacoes/kata', verificarPermissao(['admin', 'sensei', 'mesario', 'aluno']), async (req, res) => {
     try {
         const notas = await prisma.pontuacaoKata.findMany({ 
@@ -276,7 +373,6 @@ app.get('/api/pontuacoes/kata', verificarPermissao(['admin', 'sensei', 'mesario'
     }
 });
 
-// Admin, Sensei e Mesários podem adicionar notas
 app.post('/api/pontuacoes/kata', verificarPermissao(['admin', 'sensei', 'mesario']), async (req, res) => {
     try {
         const { atleta_id, evento_id, data, nome_kata, nota_tecnica, nota_atletica, nota_final, resultado, observacoes } = req.body;
@@ -297,7 +393,7 @@ app.post('/api/pontuacoes/kata', verificarPermissao(['admin', 'sensei', 'mesario
         const nota = await prisma.pontuacaoKata.create({ data: dataInput });
         res.json(nota);
     } catch (error) {
-        res.status(500).json({ error: "Erro ao salvar Kata", detalhe: error.message });
+        res.status(500).json({ error: "Erro ao salvar Kata" });
     }
 });
 
@@ -326,13 +422,12 @@ app.put('/api/pontuacoes/kata/:id', verificarPermissao(['admin', 'sensei', 'mesa
         });
         res.json(atualizado);
     } catch (error) {
-        res.status(500).json({ error: "Erro ao atualizar Kata", detalhe: error.message });
+        res.status(500).json({ error: "Erro ao atualizar Kata" });
     }
 });
 
 app.delete('/api/pontuacoes/kata/:id', verificarPermissao(['admin', 'sensei']), async (req, res) => {
     try {
-        // CORREÇÃO APLICADA: Corrigido o modelo alvo de exclusão
         await prisma.pontuacaoKata.delete({ where: { id: parseInt(req.params.id) } });
         res.json({ message: "Kata apagado" });
     } catch (error) {
@@ -376,7 +471,7 @@ app.post('/api/pontuacoes/kumite', verificarPermissao(['admin', 'sensei', 'mesar
         const luta = await prisma.pontuacaoKumite.create({ data: dataInput }); 
         res.json(luta);
     } catch (error) {
-        res.status(500).json({ error: "Erro ao salvar Kumite", detalhe: error.message });
+        res.status(500).json({ error: "Erro ao salvar Kumite" });
     }
 });
 
@@ -405,7 +500,7 @@ app.put('/api/pontuacoes/kumite/:id', verificarPermissao(['admin', 'sensei', 'me
         });
         res.json(atualizado);
     } catch (error) {
-        res.status(500).json({ error: "Erro ao atualizar Kumite", detalhe: error.message });
+        res.status(500).json({ error: "Erro ao atualizar Kumite" });
     }
 });
 
@@ -422,11 +517,10 @@ app.delete('/api/pontuacoes/kumite/:id', verificarPermissao(['admin', 'sensei'])
 // --- GESTÃO DE UTILIZADORES (ADMIN) ---
 // ==========================================
 
-// 1. Listar todos os utilizadores (Ocultando as senhas por segurança)
 app.get('/api/usuarios', verificarPermissao(['admin']), async (req, res) => {
     try {
         const usuarios = await prisma.usuario.findMany({
-            select: { id: true, nome: true, email: true, role: true },
+            select: { id: true, nome: true, email: true, role: true, email_verificado: true },
             orderBy: { nome: 'asc' }
         });
         res.json(usuarios);
@@ -435,7 +529,6 @@ app.get('/api/usuarios', verificarPermissao(['admin']), async (req, res) => {
     }
 });
 
-// 2. Mudar o cargo de um utilizador
 app.put('/api/usuarios/:id/role', verificarPermissao(['admin']), async (req, res) => {
     try {
         const { id } = req.params;
@@ -445,14 +538,12 @@ app.put('/api/usuarios/:id/role', verificarPermissao(['admin']), async (req, res
             where: { id: parseInt(id) },
             data: { role }
         });
-        // CORREÇÃO APLICADA: A variável agora é "atualizado" em vez de "updated"
         res.json({ message: "Cargo atualizado com sucesso!", role: atualizado.role });
     } catch (error) {
         res.status(500).json({ error: "Erro ao atualizar cargo." });
     }
 });
 
-// 3. Apagar um utilizador
 app.delete('/api/usuarios/:id', verificarPermissao(['admin']), async (req, res) => {
     try {
         await prisma.usuario.delete({ where: { id: parseInt(req.params.id) } });
@@ -465,12 +556,9 @@ app.delete('/api/usuarios/:id', verificarPermissao(['admin']), async (req, res) 
 // ==========================================
 // --- INICIALIZAÇÃO DO SERVIDOR ---
 // ==========================================
-
-// CORREÇÃO APLICADA: Bloco movido para o final do arquivo após o registro de todas as rotas
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Servidor rodando com sucesso na porta ${PORT}!`);
 });
 
-// CORREÇÃO APLICADA: Adicionado para garantir o funcionamento em ambientes Serverless como a Vercel
 module.exports = app;
