@@ -512,7 +512,47 @@ app.delete('/api/pontuacoes/kumite/:id', verificarPermissao(['admin', 'sensei'])
         res.status(500).json({ error: "Erro ao apagar Kumite" });
     }
 });
+//GESTÂO DOJO
+// 1. Listar todos os Dojos (Vitrine para os alunos verem)
+app.get('/api/dojos', verificarPermissao(['admin', 'sensei', 'mesario', 'aluno']), async (req, res) => {
+    try {
+        const dojos = await prisma.dojo.findMany({
+            include: { criador: { select: { nome: true } } },
+            orderBy: { nome: 'asc' }
+        });
+        res.json(dojos);
+    } catch (error) {
+        res.status(500).json({ error: "Erro ao buscar a lista de Dojos." });
+    }
+});
 
+// 2. Buscar Dojos onde o usuário logado é ADMIN (Para o painel de aprovação)
+app.get('/api/dojos/gerenciar', verificarPermissao(['admin', 'sensei', 'aluno']), async (req, res) => {
+    try {
+        const usuarioId = req.usuarioLogado.id;
+        
+        // Busca os vínculos onde o usuário é ADMIN, trazendo os dados do Dojo e as solicitações pendentes
+        const dojosAdmin = await prisma.membroDojo.findMany({
+            where: { usuario_id: usuarioId, papel: 'ADMIN' },
+            include: {
+                dojo: {
+                    include: {
+                        membros: {
+                            where: { status: 'PENDENTE' },
+                            include: { usuario: { select: { id: true, nome: true, email: true } } }
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Formata a resposta para entregar apenas os Dojos
+        const dojosGerenciados = dojosAdmin.map(vinculo => vinculo.dojo);
+        res.json(dojosGerenciados);
+    } catch (error) {
+        res.status(500).json({ error: "Erro ao buscar Dojos para gerenciamento." });
+    }
+});
 // ==========================================
 // --- GESTÃO DE UTILIZADORES (ADMIN) ---
 // ==========================================
